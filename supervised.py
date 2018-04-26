@@ -19,7 +19,7 @@ class GuessEnv:
 
     def reset(self):
         # self.correct = np.random.randint(self.nA)
-        self.correct = np.random.randint(2)
+        self.correct = np.random.randint(4)
         self.round = 0
         state, _, _, _ = self.step(np.random.randint(self.nA))
         return state
@@ -61,13 +61,15 @@ def grad(model, inputs, targets):
         loss_value = loss(model, inputs, targets)
     return tape.gradient(loss_value, model.variables)
 
-optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
 
-num_episodes = 20
-discount_factor = 0.95
-epsilon = 0.1
-batch_size = 32
-epochs = 200
+learning_rate = 1e-2
+num_episodes = 30
+epochs = 20
+# batch_size = 512
+# discount_factor = 0.95
+# epsilon = 0.1
+
+optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
 
 for epoch in range(epochs):
     epoch_loss_avg = tfe.metrics.Mean()
@@ -80,20 +82,24 @@ for epoch in range(epochs):
     for episode in range(num_episodes):
         state = env.reset()
 
+        guesses = []
         # Training loop - using batches of 32
         states = tf.reshape(state, (1, 1, 4))
         for t in itertools.count():
             # Choose action epsilon greedy
-            if np.random.rand(1) <= epsilon:
-                action = np.random.randint(env.nA)
-            else:
-                q = model(states)
-                action = tf.argmax(q, axis=1).numpy()[0]
+            # if np.random.rand(1) <= epsilon:
+            #     action = np.random.randint(env.nA)
+            # else:
+            #     q = model(states)
+            #     action = tf.argmax(q, axis=1).numpy()[0]
+            action_probs = model(states)
+            action = np.random.choice(np.arange(env.nA), p=action_probs.numpy()[0])
 
             # Take action
             next_state, reward, done, debug = env.step(action)
             next_states = tf.concat([states, tf.reshape(next_state, (1, 1, 4))], axis=1)
             replay_memory.append(Transition(states, action, reward, next_states, done))
+            guesses.append(action)
 
 
             episode_rewards += reward
@@ -102,6 +108,7 @@ for epoch in range(epochs):
                 break
 
         results.append((states, env.correct))
+        # print(guesses, env.correct)
 
     l = 0
     for x, y in results:
@@ -115,13 +122,15 @@ for epoch in range(epochs):
 
     print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}".format(epoch, epoch_loss_avg.result(), epoch_accuracy.result(), episode_rewards/num_episodes))
 
+model.save("supervised.h5")
+
     # samples = random.sample(replay_memory, batch_size)
     # samples = replay_memory
     # states_batch, action_batch, reward_batch, next_states_batch, done_batch = zip(*samples)
     # targets = model(states_batch).numpy()
     # q_values_next = model(next_states_batch)
     # targets[:, action_batch] = reward_batch + discount_factor * np.max(q_values_next, axis=1)*np.invert(done_batch)
-
+    #
     # grads = grad(model, states_batch, targets)
     # optimizer.apply_gradients(zip(grads, model.variables),
     #                           global_step=tf.train.get_or_create_global_step())
