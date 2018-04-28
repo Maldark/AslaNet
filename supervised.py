@@ -8,7 +8,7 @@ tf.enable_eager_execution()
 
 class GuessEnv:
     def __init__(self):
-        self.nA = 64
+        self.nA = 256
         self.number_of_rounds = 8
         self.reset()
 
@@ -59,7 +59,7 @@ def grad(model, inputs, targets):
 
 learning_rate = 1e-2
 num_episodes = env.nA * 2
-epochs = 1000
+epochs = 2000
 # batch_size = 512
 # discount_factor = 0.95
 # epsilon = 0.1
