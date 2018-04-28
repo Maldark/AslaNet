@@ -43,9 +43,9 @@ class GuessEnv:
 env = GuessEnv()
 
 model = tf.keras.Sequential([
-    # tf.keras.layers.Dense(16, activation="relu", input_shape=(4,)),  # input shape required
-    tf.keras.layers.LSTM(16, input_shape=(None, 4)),  # batch size, sequence, features
-    tf.keras.layers.Dense(env.nA)
+    tf.keras.layers.LSTM(16, input_shape=(None, 4), return_sequences=True),  # batch size, sequence, features
+    tf.keras.layers.TimeDistributed(env.nA, activation='softmax')
+    # tf.keras.layers.Dropout(0.5)
 ])
 print(model.summary())
 

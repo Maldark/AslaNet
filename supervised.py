@@ -14,9 +14,8 @@ class GuessEnv:
 
     def reset(self, correct=None):
         self.correct = correct if correct is not None else np.random.randint(self.nA)
-        state, _, _, _ = self.step(0)  # Initial state is a guess of zero.
         self.round = 0
-        return state
+        return np.zeros((1, 4), dtype=np.float32)  # Start state is just zeros
 
     def step(self, action):
         assert 0 <= action < self.nA
@@ -41,7 +40,7 @@ class GuessEnv:
 env = GuessEnv()
 
 model = tf.keras.Sequential([
-    tf.keras.layers.LSTM(32, input_shape=(None, 4)),  # batch size, sequence, features
+    tf.keras.layers.LSTM(16, input_shape=(None, 4)),  # batch size, sequence, features
     tf.keras.layers.Dense(env.nA, activation="softmax")
 ])
 print(model.summary())
@@ -75,20 +74,27 @@ for epoch in range(epochs):
     labels = np.zeros(num_episodes, dtype=np.int32)
 
     episode_rewards = 0
+    num_correct_guesses = 0
+    rounds_before_correct = 0
     for episode in range(num_episodes):
         state = env.reset(correct=episode % env.nA)
+        states = tf.zeros((1, 0, 4), dtype=np.float32)
 
-        states = tf.reshape(state, (1, 1, 4))
         for t in itertools.count():
+            states = tf.concat([states, tf.reshape(state, (1, 1, 4))], axis=1)
             action_probs = model(states)
             action = np.random.choice(np.arange(env.nA), p=action_probs.numpy()[0])
 
             # Take action
             next_state, reward, done, debug = env.step(action)
-            next_states = tf.concat([states, tf.reshape(next_state, (1, 1, 4))], axis=1)
+
+            # log statistics
+            if reward == 1:
+                num_correct_guesses += 1
+                rounds_before_correct += t
 
             episode_rewards += reward
-            states = next_states
+            state = next_state
 
             if done:
                 break
@@ -104,9 +110,18 @@ for epoch in range(epochs):
     epoch_loss_avg(loss(model, inputs, labels))  # add current batch loss
     epoch_accuracy(tf.argmax(model(inputs), axis=1, output_type=tf.int32), labels)
 
-    print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}".format(epoch, epoch_loss_avg.result(),
-                                                                                     epoch_accuracy.result(),
-                                                                                     episode_rewards / num_episodes))
+    print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}, Correct episodes: {}/{} with avg. rounds: {:.3f}"
+          .format(epoch, epoch_loss_avg.result(),
+                  epoch_accuracy.result(),
+                  episode_rewards / num_episodes,
+                  num_correct_guesses,
+                  num_episodes,
+                  rounds_before_correct / num_correct_guesses))
+
+    if epoch % 50 == 0:
+        model.save("supervised.h5")
+        print("Model saved!")
+
 
 model.save("supervised.h5")
 
