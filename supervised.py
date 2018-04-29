@@ -119,7 +119,7 @@ for epoch in range(epochs):
                   rounds_before_correct / num_correct_guesses))
 
     if epoch % 50 == 0:
-        model.save("supervised.h5")
+        model.save("supervised.h5", include_optimizer=False)
         print("Model saved!")
 
 
