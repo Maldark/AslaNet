@@ -64,6 +64,7 @@ def softmax_grad(model, inputs, targets):
     return tape.gradient(loss_value, model.variables)
 
 
+<<<<<<< HEAD
 def train():
     for epoch in range(epochs):
         epoch_loss_avg = tfe.metrics.Mean()

@@ -2,15 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="f17035d4-b1ec-4085-919e-fa3ff96f7868" name="Default" comment="">
-      <change beforePath="" afterPath="$PROJECT_DIR$/evaluation.py" />
-      <change beforePath="" afterPath="$PROJECT_DIR$/policy_gradient.py" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change beforePath="$PROJECT_DIR$/lol.py" afterPath="" />
-      <change beforePath="$PROJECT_DIR$/qlearning.py" afterPath="$PROJECT_DIR$/qlearning.py" />
-      <change beforePath="$PROJECT_DIR$/supervised.h5" afterPath="" />
+      <change beforePath="$PROJECT_DIR$/supervised.h5" afterPath="$PROJECT_DIR$/supervised.h5" />
       <change beforePath="$PROJECT_DIR$/supervised.py" afterPath="$PROJECT_DIR$/supervised.py" />
-      <change beforePath="$PROJECT_DIR$/tflow.py" afterPath="" />
-      <change beforePath="$PROJECT_DIR$/train_lstm.py" afterPath="" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -24,8 +17,8 @@
       <file leaf-file-name="supervised.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/supervised.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="644">
-              <caret line="131" column="0" lean-forward="true" selection-start-line="131" selection-start-column="0" selection-end-line="131" selection-end-column="0" />
+            <state relative-caret-position="299">
+              <caret line="117" column="22" lean-forward="false" selection-start-line="117" selection-start-column="22" selection-end-line="117" selection-end-column="22" />
               <folding>
                 <element signature="e#0#23#0" expanded="true" />
               </folding>
@@ -618,8 +611,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/supervised.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="644">
-          <caret line="131" column="0" lean-forward="true" selection-start-line="131" selection-start-column="0" selection-end-line="131" selection-end-column="0" />
+        <state relative-caret-position="299">
+          <caret line="117" column="22" lean-forward="false" selection-start-line="117" selection-start-column="22" selection-end-line="117" selection-end-column="22" />
           <folding>
             <element signature="e#0#23#0" expanded="true" />
           </folding>
