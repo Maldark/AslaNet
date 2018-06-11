@@ -1,9 +1,6 @@
 import tensorflow as tf
-import tensorflow.contrib.eager as tfe
 import numpy as np
 import itertools
-
-tf.enable_eager_execution()
 
 
 class GuessEnv:
@@ -47,42 +44,31 @@ model = tf.keras.Sequential([
     tf.keras.layers.LSTM(16, input_shape=(None, 4)),
     tf.keras.layers.Dense(env.number_of_actions, activation="softmax")
 ])
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
 print(model.summary())
-
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-
-
-def softmax_loss(model, x, y):
-    y_ = model(x)
-    return tf.losses.sparse_softmax_cross_entropy(y, y_)
-
-
-def softmax_grad(model, inputs, targets):
-    with tfe.GradientTape() as tape:
-        loss_value = softmax_loss(model, inputs, targets)
-    return tape.gradient(loss_value, model.variables)
 
 
 def train():
     for epoch in range(epochs):
-        epoch_loss_avg = tfe.metrics.Mean()
-        epoch_accuracy = tfe.metrics.Accuracy()
-
         inputs = np.zeros((num_episodes, env.number_of_rounds, 4), dtype=np.float32)
-        labels = np.zeros(num_episodes, dtype=np.int32)
+        labels = np.zeros((num_episodes, env.number_of_actions), dtype=np.int32)
 
         num_correct_guesses = 0
         for episode in range(num_episodes):
             # We fix the correct value to stabilize the learning process
             state = env.reset(correct=episode % env.number_of_actions)
-            states = tf.zeros((1, 0, 4), dtype=np.float32)
+            states = np.zeros((1, 0, 4), dtype=np.float32)
             episode_rewards = 0
             guessed_right = False
 
             for _ in itertools.count():
-                states = tf.concat([states, tf.reshape(state, (1, 1, 4))], axis=1)
-                action_probs = model(states)
-                action = np.random.choice(np.arange(env.number_of_actions), p=action_probs.numpy()[0])
+                states = np.concatenate([states, np.reshape(state, (1, 1, 4))], axis=1)
+                action_probs = model.predict(states)
+                action = np.random.choice(np.arange(env.number_of_actions), p=action_probs[0])
 
                 # Take action
                 next_state, reward, done, debug = env.step(action)
@@ -98,36 +84,11 @@ def train():
                     break
 
             inputs[episode] = states
-            labels[episode] = env.correct
+            labels[episode] = np.eye(env.number_of_actions)[env.correct]
 
-        inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
-        grads = softmax_grad(model, inputs, labels)
-
-        optimizer.apply_gradients(zip(grads, model.variables),
-                                  global_step=tf.train.get_or_create_global_step())
-
-        epoch_loss_avg(softmax_loss(model, inputs, labels))  # add current batch loss
-        epoch_accuracy(tf.argmax(model(inputs), axis=1, output_type=tf.int32), labels)
-
-        print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}, Correct episodes: {}/{}"
-              .format(epoch, epoch_loss_avg.result(),
-                      epoch_accuracy.result(),
-                      episode_rewards / num_episodes,
-                      num_correct_guesses,
-                      num_episodes))
-        with open("result.csv", "a") as f:
-            f.write("{:03d}, {:.3f}, {:.3%}, {:.3f}, {}/{}"
-                    .format(epoch, epoch_loss_avg.result(),
-                    epoch_accuracy.result(),
-                    episode_rewards / num_episodes,
-                    num_correct_guesses,
-                    num_episodes))
-
-        if epoch % 20 == 0:
-            model.save(model_name, include_optimizer=False)
-            print("Model saved!")
+        model.fit(inputs, labels)
+        model.save(model_name)
+        print("Epoch {}/{}, Avg. reward: {:.3f}, Correct episodes: {}/{}".format(epoch, epochs, episode_rewards / num_episodes, num_correct_guesses, num_episodes))
 
 
 train()
-
-model.save(model_name, include_optimizer=False)
