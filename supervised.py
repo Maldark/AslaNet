@@ -37,7 +37,7 @@ class GuessEnv:
 
 
 env = GuessEnv()
-learning_rate = 1e-3
+learning_rate = 1e-2
 num_episodes = env.number_of_actions * 2
 epochs = 2000
 model_name = "supervised_{}.h5".format(env.number_of_actions)
@@ -45,7 +45,6 @@ model_name = "supervised_{}.h5".format(env.number_of_actions)
 # Use LSTMs to model "memory", the model estimates the next guess as a combination of previous and current results.
 model = tf.keras.Sequential([
     tf.keras.layers.LSTM(16, input_shape=(None, 4)),
-    tf.keras.layers.Dense(32),
     tf.keras.layers.Dense(env.number_of_actions, activation="softmax")
 ])
 print(model.summary())
@@ -104,8 +103,6 @@ def train():
         inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
         grads = softmax_grad(model, inputs, labels)
 
-        # Apply gradient clipping to avoid exploding gradients by cutting off gradients to values between -1 and 1.
-        grads = [tf.clip_by_value(g, -1., 1.) for g in grads]
         optimizer.apply_gradients(zip(grads, model.variables),
                                   global_step=tf.train.get_or_create_global_step())
 
