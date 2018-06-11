@@ -8,7 +8,7 @@ tf.enable_eager_execution()
 
 class GuessEnv:
     def __init__(self):
-        self.nA = 64
+        self.nA = 256
         self.number_of_rounds = 8
         self.reset()
 
@@ -46,9 +46,9 @@ model = tf.keras.Sequential([
 print(model.summary())
 
 
-def loss(model, observation, targetQ):
-    currentQ = model(observation)
-    return tf.reduce_sum(tf.square(targetQ, currentQ))
+def loss(model, prediction, target):
+    # prediction = Q(s,a), target = r + max_a Q(s',a)
+    return tf.reduce_mean(tf.square(target - prediction))
 
 
 def grad(model, inputs, targets):
@@ -61,7 +61,7 @@ learning_rate = 1e-2
 num_episodes = env.nA * 2
 epochs = 1000
 # batch_size = 512
-# discount_factor = 0.95
+discount = 0.95
 epsilon = 0.1
 
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -84,14 +84,21 @@ for epoch in range(epochs):
             states = tf.concat([states, tf.reshape(state, (1, 1, 4))], axis=1)
             q = model(states)
             if np.random.rand(1) < epsilon:
-                action = np.random.choice(np.arange(env.nA))
+                action = np.random.randint(env.nA)
             else:
-                action = tf.argmax(q, 1)
+                action = np.argmax(q.numpy()[0])
 
             # Take action
             next_state, reward, done, debug = env.step(action)
-            next_q = model(next_state)
-            q[]
+
+            # Update model
+            next_states = tf.concat([states, tf.reshape(next_state, (1, 1, 4))], axis=1)
+            next_q = model(next_states)
+            target = q.numpy()
+            target[0][action] = reward + discount * np.max(next_q.numpy())
+            grads = grad(model, states, target)
+            optimizer.apply_gradients(zip(grads, model.variables),
+                                      global_step=tf.train.get_or_create_global_step())
 
             # log statistics
             if reward == 1:
@@ -106,11 +113,6 @@ for epoch in range(epochs):
 
         inputs[episode] = states
         labels[episode] = env.correct
-
-    inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
-    grads = grad(model, inputs, labels)
-    optimizer.apply_gradients(zip(grads, model.variables),
-                              global_step=tf.train.get_or_create_global_step())
 
     epoch_loss_avg(loss(model, inputs, labels))  # add current batch loss
     epoch_accuracy(tf.argmax(model(inputs), axis=1, output_type=tf.int32), labels)

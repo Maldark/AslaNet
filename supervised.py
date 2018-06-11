@@ -8,132 +8,129 @@ tf.enable_eager_execution()
 
 class GuessEnv:
     def __init__(self):
-        self.nA = 256
-        self.number_of_rounds = 8
+        self.number_of_actions = 256
+        self.number_of_rounds = 8 # one should optimally only spend log(nA) rounds
         self.reset()
 
     def reset(self, correct=None):
-        self.correct = correct if correct is not None else np.random.randint(self.nA)
+        self.correct = correct if correct is not None else np.random.randint(self.number_of_actions)
         self.round = 0
         return np.zeros((1, 4), dtype=np.float32)  # Start state is just zeros
 
     def step(self, action):
-        assert 0 <= action < self.nA
+        assert 0 <= action < self.number_of_actions
         self.round += 1
+        done = False
         if self.round == self.number_of_rounds:
             done = True
-        else:
-            done = False
         state = np.zeros((1, 4), dtype=np.float32)
-        state[0][3] = action / self.nA  # instead of one hot encoding
+        state[0][3] = action / self.number_of_actions  # stabilize network by having all input numbers between 0-1.
         if action == self.correct:
             state[0][2] = 1  # Correct guess!
-            return tf.convert_to_tensor(state, dtype=tf.float32), 1, done, {"actual": self.correct}
-        elif self.correct < action:
-            state[0][0] = 1  # Go lower!
-            return tf.convert_to_tensor(state, dtype=tf.float32), -1, done, {"actual": self.correct}
+            return state, 1, done, {"actual": self.correct}
+        elif action < self.correct:
+            state[0][0] = 1  # Too low
+            return state, -1, done, {"actual": self.correct}
         else:
-            state[0][1] = 1  # Go higher!
-            return tf.convert_to_tensor(state, dtype=tf.float32), -1, done, {"actual": self.correct}
+            state[0][1] = 1  # Too high
+            return state, -1, done, {"actual": self.correct}
 
 
 env = GuessEnv()
+learning_rate = 1e-3
+num_episodes = env.number_of_actions * 2
+epochs = 2000
+model_name = "supervised_{}.h5".format(env.number_of_actions)
 
+# Use LSTMs to model "memory", the model estimates the next guess as a combination of previous and current results.
 model = tf.keras.Sequential([
-    tf.keras.layers.LSTM(16, input_shape=(None, 4)),  # batch size, sequence, features
-    tf.keras.layers.Dense(env.nA, activation="softmax")
+    tf.keras.layers.LSTM(16, input_shape=(None, 4)),
+    tf.keras.layers.Dense(32),
+    tf.keras.layers.Dense(env.number_of_actions, activation="softmax")
 ])
 print(model.summary())
 
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
-def loss(model, x, y):
+
+def softmax_loss(model, x, y):
     y_ = model(x)
-    return tf.losses.sparse_softmax_cross_entropy(labels=y, logits=y_)
+    return tf.losses.sparse_softmax_cross_entropy(y, y_)
 
 
-def grad(model, inputs, targets):
+def softmax_grad(model, inputs, targets):
     with tfe.GradientTape() as tape:
-        loss_value = loss(model, inputs, targets)
+        loss_value = softmax_loss(model, inputs, targets)
     return tape.gradient(loss_value, model.variables)
 
 
-learning_rate = 1e-2
-num_episodes = env.nA * 2
-epochs = 2000
-# batch_size = 512
-# discount_factor = 0.95
-# epsilon = 0.1
+def train():
+    for epoch in range(epochs):
+        epoch_loss_avg = tfe.metrics.Mean()
+        epoch_accuracy = tfe.metrics.Accuracy()
 
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        inputs = np.zeros((num_episodes, env.number_of_rounds, 4), dtype=np.float32)
+        labels = np.zeros(num_episodes, dtype=np.int32)
 
-for epoch in range(epochs):
-    epoch_loss_avg = tfe.metrics.Mean()
-    epoch_accuracy = tfe.metrics.Accuracy()
+        num_correct_guesses = 0
+        for episode in range(num_episodes):
+            # We fix the correct value to stabilize the learning process
+            state = env.reset(correct=episode % env.number_of_actions)
+            states = tf.zeros((1, 0, 4), dtype=np.float32)
+            episode_rewards = 0
+            guessed_right = False
 
-    inputs = np.zeros((num_episodes, env.number_of_rounds, 4), dtype=np.float32)
-    labels = np.zeros(num_episodes, dtype=np.int32)
+            for _ in itertools.count():
+                states = tf.concat([states, tf.reshape(state, (1, 1, 4))], axis=1)
+                action_probs = model(states)
+                action = np.random.choice(np.arange(env.number_of_actions), p=action_probs.numpy()[0])
 
-    episode_rewards = 0
-    num_correct_guesses = 0
-    rounds_before_correct = 0
-    for episode in range(num_episodes):
-        state = env.reset(correct=episode % env.nA)
-        states = tf.zeros((1, 0, 4), dtype=np.float32)
+                # Take action
+                next_state, reward, done, debug = env.step(action)
+                state = next_state
 
-        for t in itertools.count():
-            states = tf.concat([states, tf.reshape(state, (1, 1, 4))], axis=1)
-            action_probs = model(states)
-            action = np.random.choice(np.arange(env.nA), p=action_probs.numpy()[0])
+                # Log statistics
+                episode_rewards += reward
+                if not guessed_right and reward == 1:
+                    guessed_right = True
+                    num_correct_guesses += 1
 
-            # Take action
-            next_state, reward, done, debug = env.step(action)
+                if done:
+                    break
 
-            # log statistics
-            if reward == 1:
-                num_correct_guesses += 1
-                rounds_before_correct += t
+            inputs[episode] = states
+            labels[episode] = env.correct
 
-            episode_rewards += reward
-            state = next_state
+        inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
+        grads = softmax_grad(model, inputs, labels)
 
-            if done:
-                break
+        # Apply gradient clipping to avoid exploding gradients by cutting off gradients to values between -1 and 1.
+        grads = [tf.clip_by_value(g, -1., 1.) for g in grads]
+        optimizer.apply_gradients(zip(grads, model.variables),
+                                  global_step=tf.train.get_or_create_global_step())
 
-        inputs[episode] = states
-        labels[episode] = env.correct
+        epoch_loss_avg(softmax_loss(model, inputs, labels))  # add current batch loss
+        epoch_accuracy(tf.argmax(model(inputs), axis=1, output_type=tf.int32), labels)
 
-    inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
-    grads = grad(model, inputs, labels)
-    optimizer.apply_gradients(zip(grads, model.variables),
-                              global_step=tf.train.get_or_create_global_step())
+        print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}, Correct episodes: {}/{}"
+              .format(epoch, epoch_loss_avg.result(),
+                      epoch_accuracy.result(),
+                      episode_rewards / num_episodes,
+                      num_correct_guesses,
+                      num_episodes))
+        with open("result.csv", "a") as f:
+            f.write("{:03d}, {:.3f}, {:.3%}, {:.3f}, {}/{}"
+                    .format(epoch, epoch_loss_avg.result(),
+                    epoch_accuracy.result(),
+                    episode_rewards / num_episodes,
+                    num_correct_guesses,
+                    num_episodes))
 
-    epoch_loss_avg(loss(model, inputs, labels))  # add current batch loss
-    epoch_accuracy(tf.argmax(model(inputs), axis=1, output_type=tf.int32), labels)
-
-    print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}, Avg. reward: {:.3f}, Correct episodes: {}/{} with avg. rounds: {:.3f}"
-          .format(epoch, epoch_loss_avg.result(),
-                  epoch_accuracy.result(),
-                  episode_rewards / num_episodes,
-                  num_correct_guesses,
-                  num_episodes,
-                  rounds_before_correct / num_correct_guesses))
-
-    if epoch % 50 == 0:
-        model.save("supervised.h5")
-        print("Model saved!")
+        if epoch % 20 == 0:
+            model.save(model_name, include_optimizer=False)
+            print("Model saved!")
 
 
-model.save("supervised.h5")
+train()
 
-# samples = random.sample(replay_memory, batch_size)
-# samples = replay_memory
-# states_batch, action_batch, reward_batch, next_states_batch, done_batch = zip(*samples)
-# targets = model(states_batch).numpy()
-# q_values_next = model(next_states_batch)
-# targets[:, action_batch] = reward_batch + discount_factor * np.max(q_values_next, axis=1)*np.invert(done_batch)
-#
-# grads = grad(model, states_batch, targets)
-# optimizer.apply_gradients(zip(grads, model.variables),
-#                           global_step=tf.train.get_or_create_global_step())
-#
-# l = loss(model, states_batch, targets)
+model.save(model_name, include_optimizer=False)
